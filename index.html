@@ -187,7 +187,7 @@
     </main>
 
 
-    <!-- Footer -->
+        <!-- Footer -->
     <footer>
         <p>
             Object Detection Camera &copy; 2026
@@ -201,45 +201,8 @@
     <!-- COCO-SSD -->
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 
-    <!-- Firebase App -->
-    <script type="module">
-        import { initializeApp } 
-        from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
-
-        import {
-            getFirestore
-        } 
-        from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
-
-        /*
-         * Konfigurasi Firebase akan dimasukkan
-         * pada tahap berikutnya.
-         */
-
-        const firebaseConfig = {
-            apiKey: "AIzaSyC7hiFQ3HXza9gwjpzXV7Tm8xRsqe14p6k",
-            authDomain: "expense-tracer-mahasiswa-c5cf8.firebaseapp.com",
-            projectId: "expense-tracer-mahasiswa-c5cf8",
-            storageBucket: "expense-tracer-mahasiswa-c5cf8.firebasestorage.app",
-            messagingSenderId: "90640908734",
-            appId: "1:90640908734:web:05f8de2843105240c5f9ef"
-        };
-
-        /*
-         * Firebase akan diaktifkan setelah
-         * konfigurasi Firebase dibuat.
-         */
-
-        const app = initializeApp(firebaseConfig);
-        const db = getFirestore(app);
-        const expensesCollection = collection(db, "expenses");
-
-        window.db = db;
-    </script>
-
-
-    <!-- JavaScript -->
-    <script src="app.js"></script>
+    <!-- JavaScript (module, sudah berisi Firebase) -->
+    <script type="module" src="app.js"></script>
 
 </body>
 </html>
