@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Object Detection Camera</title>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Font Awesome -->
+    <link
+        rel="stylesheet"
+        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    >
+</head>
+
+<body>
+
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="logo">
+            <i class="fa-solid fa-camera"></i>
+            Object Detection
+        </div>
+
+        <div class="nav-status">
+            <span class="status-dot"></span>
+            <span id="cameraStatus">Camera Inactive</span>
+        </div>
+    </nav>
+
+
+    <!-- Main Content -->
+    <main class="container">
+
+        <!-- Camera Section -->
+        <section class="camera-section">
+
+            <div class="section-header">
+                <div>
+                    <h1>Live Camera</h1>
+                    <p>Deteksi objek secara langsung menggunakan kamera</p>
+                </div>
+            </div>
+
+            <!-- Camera Container -->
+            <div class="camera-container">
+
+                <!-- Video Kamera -->
+                <video
+                    id="video"
+                    autoplay
+                    muted
+                    playsinline>
+                </video>
+
+                <!-- Canvas untuk Bounding Box -->
+                <canvas id="canvas"></canvas>
+
+                <!-- Loading -->
+                <div id="loading" class="loading">
+                    <div class="loading-spinner"></div>
+                    <p>Memuat model AI...</p>
+                </div>
+
+                <!-- Camera Placeholder -->
+                <div id="cameraPlaceholder" class="camera-placeholder">
+                    <i class="fa-solid fa-video-slash"></i>
+                    <p>Kamera belum aktif</p>
+                    <button id="startCameraBtn">
+                        <i class="fa-solid fa-video"></i>
+                        Aktifkan Kamera
+                    </button>
+                </div>
+
+            </div>
+
+
+            <!-- Detection Information -->
+            <div class="detection-info">
+
+                <div class="info-card">
+                    <div class="info-icon">
+                        <i class="fa-solid fa-eye"></i>
+                    </div>
+
+                    <div>
+                        <span class="info-label">Objek Terdeteksi</span>
+                        <h3 id="detectedObject">-</h3>
+                    </div>
+                </div>
+
+
+                <div class="info-card">
+                    <div class="info-icon">
+                        <i class="fa-solid fa-bullseye"></i>
+                    </div>
+
+                    <div>
+                        <span class="info-label">Confidence</span>
+                        <h3 id="confidence">-</h3>
+                    </div>
+                </div>
+
+
+                <div class="info-card">
+                    <div class="info-icon">
+                        <i class="fa-solid fa-clock"></i>
+                    </div>
+
+                    <div>
+                        <span class="info-label">Detection Terakhir</span>
+                        <h3 id="lastDetection">-</h3>
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+
+        <!-- History Section -->
+        <section class="history-section">
+
+            <div class="section-header history-header">
+
+                <div>
+                    <h2>Detection History</h2>
+                    <p>Riwayat objek yang telah terdeteksi</p>
+                </div>
+
+                <button id="clearHistoryBtn" class="clear-btn">
+                    <i class="fa-solid fa-trash"></i>
+                    Hapus History
+                </button>
+
+            </div>
+
+
+            <!-- History Table -->
+            <div class="history-container">
+
+                <table>
+
+                    <thead>
+                        <tr>
+                            <th>No</th>
+                            <th>Objek</th>
+                            <th>Confidence</th>
+                            <th>Waktu</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+
+                    <tbody id="historyList">
+
+                        <!-- Data history akan dimasukkan oleh JavaScript -->
+
+                        <tr id="emptyHistory">
+                            <td colspan="5">
+
+                                <div class="empty-history">
+
+                                    <i class="fa-solid fa-clock-rotate-left"></i>
+
+                                    <h3>Belum Ada History</h3>
+
+                                    <p>
+                                        Hasil deteksi objek akan muncul di sini.
+                                    </p>
+
+                                </div>
+
+                            </td>
+                        </tr>
+
+                    </tbody>
+
+                </table>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <!-- Footer -->
+    <footer>
+        <p>
+            Object Detection Camera &copy; 2026
+        </p>
+    </footer>
+
+
+    <!-- TensorFlow.js -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+
+    <!-- COCO-SSD -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+    <!-- Firebase App -->
+    <script type="module">
+        import { initializeApp } 
+        from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
+
+        import {
+            getFirestore
+        } 
+        from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
+
+        /*
+         * Konfigurasi Firebase akan dimasukkan
+         * pada tahap berikutnya.
+         */
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyC7hiFQ3HXza9gwjpzXV7Tm8xRsqe14p6k",
+            authDomain: "expense-tracer-mahasiswa-c5cf8.firebaseapp.com",
+            projectId: "expense-tracer-mahasiswa-c5cf8",
+            storageBucket: "expense-tracer-mahasiswa-c5cf8.firebasestorage.app",
+            messagingSenderId: "90640908734",
+            appId: "1:90640908734:web:05f8de2843105240c5f9ef"
+        };
+
+        /*
+         * Firebase akan diaktifkan setelah
+         * konfigurasi Firebase dibuat.
+         */
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+
+        window.db = db;
+    </script>
+
+
+    <!-- JavaScript -->
+    <script src="app.js"></script>
+
+</body>
+</html>
