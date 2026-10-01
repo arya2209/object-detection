@@ -1,31 +1,7 @@
 // ==========================================
 // OBJECT DETECTION CAMERA
-// TensorFlow.js + COCO-SSD + Firebase Firestore
+// TensorFlow.js + COCO-SSD
 // ==========================================
-
-import { initializeApp } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-app.js";
-import {
-    getFirestore, collection, addDoc, serverTimestamp,
-    query, orderBy, limit, getDocs, writeBatch
-} from "https://www.gstatic.com/firebasejs/12.3.0/firebase-firestore.js";
-
-
-// ==========================================
-// FIREBASE
-// ==========================================
-
-const firebaseConfig = {
-    apiKey: "AIzaSyC7hiFQ3HXza9gwjpzXV7Tm8xRsqe14p6k",
-    authDomain: "expense-tracer-mahasiswa-c5cf8.firebaseapp.com",
-    projectId: "expense-tracer-mahasiswa-c5cf8",
-    storageBucket: "expense-tracer-mahasiswa-c5cf8.firebasestorage.app",
-    messagingSenderId: "90640908734",
-    appId: "1:90640908734:web:05f8de2843105240c5f9ef"
-};
-
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
-const detectionsRef = collection(db, "detections");
 
 
 // ==========================================
@@ -39,298 +15,643 @@ const ctx = canvas.getContext("2d");
 const loading = document.getElementById("loading");
 const cameraPlaceholder = document.getElementById("cameraPlaceholder");
 const startCameraBtn = document.getElementById("startCameraBtn");
+
 const cameraStatus = document.getElementById("cameraStatus");
 
 const detectedObject = document.getElementById("detectedObject");
 const confidence = document.getElementById("confidence");
 const lastDetection = document.getElementById("lastDetection");
 
-const historyList = document.getElementById("historyList");
-const clearHistoryBtn = document.getElementById("clearHistoryBtn");
-const emptyHTML = historyList.innerHTML;
-
 
 // ==========================================
-// PENGATURAN
+// VARIABLE
 // ==========================================
-
-const DETECT_INTERVAL = 150;   // jeda antar deteksi (ms)
-const MIN_SCORE = 0.5;         // minimal confidence untuk ditampilkan
-const SAVE_MIN_SCORE = 0.6;    // minimal confidence untuk masuk history
-const SAVE_COOLDOWN = 5000;    // jeda simpan objek yang sama (ms)
-const MAX_HISTORY = 50;
 
 let model = null;
 let stream = null;
 let detecting = false;
-let busy = false;
-let lastRun = 0;
-
-let historyData = [];
-const lastSaved = {};          // { namaObjek: timestamp }
 
 
 // ==========================================
-// LOAD MODEL (versi ringan untuk HP)
+// LOAD COCO-SSD
 // ==========================================
 
 async function loadModel() {
+
     try {
+
         loading.style.display = "block";
         cameraPlaceholder.style.display = "none";
 
-        model = await cocoSsd.load({ base: "lite_mobilenet_v2" });
+        console.log("Memuat model COCO-SSD...");
+
+        model = await cocoSsd.load();
+
+        console.log("Model COCO-SSD berhasil dimuat.");
 
         loading.style.display = "none";
         cameraPlaceholder.style.display = "block";
+
     } catch (error) {
+
         console.error("Gagal memuat model:", error);
-        loading.innerHTML = "<p>Gagal memuat model AI.</p>";
+
+        loading.innerHTML = `
+            <p>Gagal memuat model AI.</p>
+        `;
+
     }
+
 }
 
 
 // ==========================================
-// START CAMERA (KAMERA DEPAN)
+// MENCARI KAMERA BELAKANG
+// ==========================================
+
+async function getBackCamera() {
+
+    try {
+
+        // Minta izin kamera terlebih dahulu
+        const temporaryStream =
+            await navigator.mediaDevices.getUserMedia({
+                video: true,
+                audio: false
+            });
+
+
+        // Ambil daftar semua kamera
+        const devices =
+            await navigator.mediaDevices.enumerateDevices();
+
+
+        // Matikan kamera sementara
+        temporaryStream
+            .getTracks()
+            .forEach(track => track.stop());
+
+
+        // Ambil device kamera
+        const cameras = devices.filter(
+            device => device.kind === "videoinput"
+        );
+
+
+        console.log("Daftar kamera:");
+
+        cameras.forEach((camera, index) => {
+
+            console.log(
+                index,
+                camera.label,
+                camera.deviceId
+            );
+
+        });
+
+
+        // Cari kamera yang kemungkinan kamera belakang
+        const backCamera = cameras.find(camera => {
+
+            const label =
+                camera.label.toLowerCase();
+
+            return (
+                label.includes("back") ||
+                label.includes("rear") ||
+                label.includes("environment") ||
+                label.includes("belakang")
+            );
+
+        });
+
+
+        if (backCamera) {
+
+            console.log(
+                "Kamera belakang ditemukan:",
+                backCamera.label
+            );
+
+            return backCamera.deviceId;
+
+        }
+
+
+        // Kalau tidak ditemukan berdasarkan nama,
+        // gunakan environment sebagai fallback
+        console.log(
+            "Kamera belakang tidak ditemukan berdasarkan label."
+        );
+
+        return null;
+
+
+    } catch (error) {
+
+        console.error(
+            "Gagal mendapatkan daftar kamera:",
+            error
+        );
+
+        return null;
+
+    }
+
+}
+
+
+// ==========================================
+// START CAMERA
 // ==========================================
 
 async function startCamera() {
-    if (!model) {
-        alert("Model AI belum selesai dimuat.");
-        return;
-    }
 
     try {
-        if (stream) stream.getTracks().forEach(t => t.stop());
 
-        stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-                facingMode: "user",
-                width: { ideal: 480 },
-                height: { ideal: 360 },
-                frameRate: { ideal: 24 }
-            },
-            audio: false
-        });
+        if (!model) {
 
+            alert(
+                "Model AI belum selesai dimuat."
+            );
+
+            return;
+
+        }
+
+
+        // Kalau kamera sebelumnya masih aktif,
+        // matikan terlebih dahulu
+        if (stream) {
+
+            stream
+                .getTracks()
+                .forEach(track => track.stop());
+
+        }
+
+
+        // Cari kamera belakang
+        const backCameraId =
+            await getBackCamera();
+
+
+        let cameraConstraints;
+
+
+        // ======================================
+        // JIKA KAMERA BELAKANG DITEMUKAN
+        // ======================================
+
+        if (backCameraId) {
+
+            cameraConstraints = {
+
+                video: {
+
+                    deviceId: {
+                        exact: backCameraId
+                    },
+
+                    width: {
+                        ideal: 640
+                    },
+
+                    height: {
+                        ideal: 480
+                    }
+
+                },
+
+                audio: false
+
+            };
+
+        }
+
+
+        // ======================================
+        // FALLBACK
+        // ======================================
+
+        else {
+
+            cameraConstraints = {
+
+                video: {
+
+                    facingMode: {
+                        ideal: "environment"
+                    },
+
+                    width: {
+                        ideal: 640
+                    },
+
+                    height: {
+                        ideal: 480
+                    }
+
+                },
+
+                audio: false
+
+            };
+
+        }
+
+
+        console.log(
+            "Membuka kamera..."
+        );
+
+
+        // Aktifkan kamera
+        stream =
+            await navigator.mediaDevices.getUserMedia(
+                cameraConstraints
+            );
+
+
+        // Masukkan stream ke video
         video.srcObject = stream;
+
+
+        // Tampilkan video
         video.style.display = "block";
-        video.style.transform = "scaleX(-1)";   // efek cermin
-        canvas.style.objectFit = "cover";       // sejajar dengan video
 
-        cameraPlaceholder.style.display = "none";
-        cameraStatus.textContent = "Camera Active";
-        document.querySelector(".status-dot").style.background = "#22c55e";
 
+        // Sembunyikan placeholder
+        cameraPlaceholder.style.display =
+            "none";
+
+
+        // Update status
+        cameraStatus.textContent =
+            "Camera Active";
+
+
+        // Status hijau
+        document.querySelector(
+            ".status-dot"
+        ).style.background = "#22c55e";
+
+
+        // Tunggu video siap
         await video.play();
 
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
 
+        // Ukuran canvas mengikuti kamera
+        setCanvasSize();
+
+
+        // Mulai detection
         detecting = true;
-        requestAnimationFrame(loop);
+
+        detectObjects();
+
+
     } catch (error) {
-        console.error("Gagal mengakses kamera:", error);
-        alert("Kamera tidak dapat diakses.\n\nPastikan browser sudah memberikan izin kamera.");
+
+        console.error(
+            "Gagal mengakses kamera:",
+            error
+        );
+
+
+        alert(
+            "Kamera tidak dapat diakses.\n\n" +
+            "Pastikan browser sudah memberikan izin kamera."
+        );
+
     }
+
 }
 
 
 // ==========================================
-// LOOP DETEKSI (requestAnimationFrame + throttle)
+// SET CANVAS SIZE
 // ==========================================
 
-async function loop(now) {
-    if (!detecting) return;
-    requestAnimationFrame(loop);
+function setCanvasSize() {
 
-    if (busy || now - lastRun < DETECT_INTERVAL || video.readyState < 2) return;
+    if (
+        video.videoWidth === 0 ||
+        video.videoHeight === 0
+    ) {
 
-    busy = true;
-    lastRun = now;
+        return;
+
+    }
+
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+}
+
+
+// ==========================================
+// OBJECT DETECTION
+// ==========================================
+
+async function detectObjects() {
+
+    if (
+        !detecting ||
+        !model
+    ) {
+
+        return;
+
+    }
+
 
     try {
-        const predictions = await model.detect(video, 5, MIN_SCORE);
 
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // Jalankan COCO-SSD
+        const predictions =
+            await model.detect(video);
+
+
+        // Bersihkan canvas
+        ctx.clearRect(
+            0,
+            0,
+            canvas.width,
+            canvas.height
+        );
+
+
+        // ======================================
+        // ADA OBJEK
+        // ======================================
 
         if (predictions.length > 0) {
-            predictions.forEach(drawBoundingBox);
 
-            const best = predictions.reduce((a, b) => (b.score > a.score ? b : a));
-            showDetectionInfo(best);
-            saveToHistory(predictions);
-        } else {
-            detectedObject.textContent = "-";
-            confidence.textContent = "-";
+            // Ambil objek dengan confidence
+            // paling tinggi
+            let highestPrediction =
+                predictions[0];
+
+
+            predictions.forEach(
+                prediction => {
+
+                    if (
+                        prediction.score >
+                        highestPrediction.score
+                    ) {
+
+                        highestPrediction =
+                            prediction;
+
+                    }
+
+                }
+            );
+
+
+            // Tampilkan informasi
+            showDetectionInfo(
+                highestPrediction
+            );
+
+
+            // Gambar bounding box
+            predictions.forEach(
+                prediction => {
+
+                    drawBoundingBox(
+                        prediction
+                    );
+
+                }
+            );
+
         }
+
+
+        // ======================================
+        // TIDAK ADA OBJEK
+        // ======================================
+
+        else {
+
+            detectedObject.textContent =
+                "-";
+
+            confidence.textContent =
+                "-";
+
+        }
+
+
     } catch (error) {
-        console.error("Detection error:", error);
-    } finally {
-        busy = false;
+
+        console.error(
+            "Detection error:",
+            error
+        );
+
     }
+
+
+    // ======================================
+    // DELAY DETECTION
+    // ======================================
+
+    if (detecting) {
+
+        setTimeout(
+            detectObjects,
+            200
+        );
+
+    }
+
 }
 
 
 // ==========================================
-// DRAW BOUNDING BOX (dengan koreksi mirror)
+// DRAW BOUNDING BOX
 // ==========================================
 
-function drawBoundingBox(prediction) {
-    const [x, y, w, h] = prediction.bbox;
-    const mx = canvas.width - x - w;   // balik horizontal
-    const score = Math.round(prediction.score * 100);
-    const label = `${prediction.class} ${score}%`;
+function drawBoundingBox(
+    prediction
+) {
 
-    ctx.strokeStyle = "#2563eb";
+    const [
+        x,
+        y,
+        width,
+        height
+    ] = prediction.bbox;
+
+
+    const objectName =
+        prediction.class;
+
+
+    const score =
+        Math.round(
+            prediction.score * 100
+        );
+
+
+    // ======================================
+    // BOX
+    // ======================================
+
+    ctx.strokeStyle =
+        "#2563eb";
+
     ctx.lineWidth = 3;
-    ctx.strokeRect(mx, y, w, h);
 
-    ctx.font = "bold 16px Arial";
-    const textWidth = ctx.measureText(label).width;
-    const labelHeight = 28;
-    const ly = Math.max(0, y - labelHeight);
+    ctx.strokeRect(
+        x,
+        y,
+        width,
+        height
+    );
 
-    ctx.fillStyle = "#2563eb";
-    ctx.fillRect(mx, ly, textWidth + 16, labelHeight);
 
-    ctx.fillStyle = "#ffffff";
-    ctx.fillText(label, mx + 8, ly + 19);
+    // ======================================
+    // LABEL
+    // ======================================
+
+    const label =
+        `${objectName} ${score}%`;
+
+
+    ctx.font =
+        "bold 16px Arial";
+
+
+    const textWidth =
+        ctx.measureText(label).width;
+
+
+    const labelHeight =
+        28;
+
+
+    // Background label
+    ctx.fillStyle =
+        "#2563eb";
+
+
+    ctx.fillRect(
+        x,
+        Math.max(
+            0,
+            y - labelHeight
+        ),
+        textWidth + 16,
+        labelHeight
+    );
+
+
+    // Text
+    ctx.fillStyle =
+        "#ffffff";
+
+
+    ctx.fillText(
+        label,
+        x + 8,
+        Math.max(
+            19,
+            y - 8
+        )
+    );
+
 }
 
 
 // ==========================================
-// INFO DETEKSI
+// SHOW DETECTION INFO
 // ==========================================
 
-function showDetectionInfo(prediction) {
-    detectedObject.textContent = prediction.class;
-    confidence.textContent = `${Math.round(prediction.score * 100)}%`;
-    lastDetection.textContent = new Date().toLocaleTimeString("id-ID", {
-        hour: "2-digit", minute: "2-digit", second: "2-digit"
-    });
+function showDetectionInfo(
+    prediction
+) {
+
+    const objectName =
+        prediction.class;
+
+
+    const score =
+        Math.round(
+            prediction.score * 100
+        );
+
+
+    // Objek
+    detectedObject.textContent =
+        objectName;
+
+
+    // Confidence
+    confidence.textContent =
+        `${score}%`;
+
+
+    // Waktu
+    const now =
+        new Date();
+
+
+    const time =
+        now.toLocaleTimeString(
+            "id-ID",
+            {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit"
+            }
+        );
+
+
+    lastDetection.textContent =
+        time;
+
 }
 
 
 // ==========================================
-// HISTORY: SIMPAN KE TABEL + FIRESTORE
+// START CAMERA BUTTON
 // ==========================================
 
-async function saveToHistory(predictions) {
-    const now = Date.now();
+startCameraBtn.addEventListener(
+    "click",
+    startCamera
+);
 
-    for (const p of predictions) {
-        if (p.score < SAVE_MIN_SCORE) continue;
-        if (lastSaved[p.class] && now - lastSaved[p.class] < SAVE_COOLDOWN) continue;
 
-        lastSaved[p.class] = now;
+// ==========================================
+// WINDOW RESIZE
+// ==========================================
 
-        const item = {
-            object: p.class,
-            confidence: Math.round(p.score * 100),
-            time: new Date(),
-            saved: false
-        };
+window.addEventListener(
+    "resize",
+    () => {
 
-        historyData.unshift(item);
-        historyData = historyData.slice(0, MAX_HISTORY);
-        renderHistory();
+        if (
+            video.videoWidth > 0
+        ) {
 
-        // Simpan ke Firestore (tidak memblokir deteksi)
-        addDoc(detectionsRef, {
-            object: item.object,
-            confidence: item.confidence,
-            createdAt: serverTimestamp()
-        })
-            .then(() => { item.saved = true; renderHistory(); })
-            .catch(err => console.error("Gagal simpan ke Firestore:", err));
+            setCanvasSize();
+
+        }
+
     }
-}
-
-function renderHistory() {
-    if (historyData.length === 0) {
-        historyList.innerHTML = emptyHTML;
-        return;
-    }
-
-    historyList.innerHTML = historyData.map((h, i) => `
-        <tr>
-            <td>${i + 1}</td>
-            <td>
-                <div class="object-name">
-                    <div class="object-icon"><i class="fa-solid fa-cube"></i></div>
-                    ${h.object}
-                </div>
-            </td>
-            <td><span class="confidence">${h.confidence}%</span></td>
-            <td>${h.time.toLocaleString("id-ID")}</td>
-            <td>
-                ${h.saved
-                    ? '<span class="status-badge">Tersimpan</span>'
-                    : '<span class="status-badge" style="background:#fef3c7;color:#d97706">Menyimpan...</span>'}
-            </td>
-        </tr>
-    `).join("");
-}
-
-async function loadHistory() {
-    try {
-        const q = query(detectionsRef, orderBy("createdAt", "desc"), limit(MAX_HISTORY));
-        const snapshot = await getDocs(q);
-
-        historyData = snapshot.docs.map(doc => {
-            const d = doc.data();
-            return {
-                object: d.object,
-                confidence: d.confidence,
-                time: d.createdAt ? d.createdAt.toDate() : new Date(),
-                saved: true
-            };
-        });
-
-        renderHistory();
-    } catch (error) {
-        console.error("Gagal memuat history:", error);
-    }
-}
-
-async function clearHistory() {
-    if (!confirm("Hapus semua history deteksi?")) return;
-
-    try {
-        const snapshot = await getDocs(detectionsRef);
-        const batch = writeBatch(db);
-        snapshot.docs.slice(0, 500).forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
-
-        historyData = [];
-        Object.keys(lastSaved).forEach(k => delete lastSaved[k]);
-        renderHistory();
-    } catch (error) {
-        console.error("Gagal menghapus history:", error);
-        alert("Gagal menghapus history dari database.");
-    }
-}
+);
 
 
 // ==========================================
-// EVENT
-// ==========================================
-
-startCameraBtn.addEventListener("click", startCamera);
-clearHistoryBtn.addEventListener("click", clearHistory);
-
-window.addEventListener("resize", () => {
-    if (video.videoWidth > 0) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-    }
-});
-
-
-// ==========================================
-// INIT
+// LOAD MODEL
 // ==========================================
 
 loadModel();
-loadHistory();
