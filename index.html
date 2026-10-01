@@ -217,13 +217,13 @@
          */
 
         const firebaseConfig = {
-            apiKey: "AIzaSyC7hiFQ3HXza9gwjpzXV7Tm8xRsqe14p6k",
-            authDomain: "expense-tracer-mahasiswa-c5cf8.firebaseapp.com",
-            projectId: "expense-tracer-mahasiswa-c5cf8",
-            storageBucket: "expense-tracer-mahasiswa-c5cf8.firebasestorage.app",
-            messagingSenderId: "90640908734",
-            appId: "1:90640908734:web:05f8de2843105240c5f9ef"
-        };
+  apiKey: "AIzaSyC7hiFQ3HXza9gwjpzXV7Tm8xRsqe14p6k",
+  authDomain: "expense-tracer-mahasiswa-c5cf8.firebaseapp.com",
+  projectId: "expense-tracer-mahasiswa-c5cf8",
+  storageBucket: "expense-tracer-mahasiswa-c5cf8.firebasestorage.app",
+  messagingSenderId: "90640908734",
+  appId: "1:90640908734:web:05f8de2843105240c5f9ef"
+};
 
         /*
          * Firebase akan diaktifkan setelah
@@ -232,7 +232,6 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
-        const expensesCollection = collection(db, "expenses");
 
         window.db = db;
     </script>
